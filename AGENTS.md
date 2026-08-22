@@ -16,6 +16,9 @@
 - 账号切换必须在主应用进程中通过 `SwitchCoordinator` 和 `AccountSwitchingEngine` 执行。
 - 主应用保持非沙盒，以访问 GitHub CLI、钥匙串凭据和全局 Git 配置；Widget 保持沙盒化，并仅保留本机网络客户端权限。
 - 状态服务必须只绑定 `127.0.0.1:47831`，不得监听局域网或公网地址，接口不得返回 token。
+- 状态读取与网络解耦（v1.2 起）：`GET /v1/status` 缓存优先、立即返回；账号来自 `gh auth status` 本地解析，调用时故意注入死代理环境（`AccountSwitchingEngine.localOnlyProxyEnvironment`）让 gh 的联网校验瞬间失败，账号读取不受网络影响（实测 8 秒超时 → 0.1 秒）；GitHub 可达性由 `remoteLogin` 在后台单独探测（30 秒节流），不可达时降级为 `offlineCached`（账号照常显示、灰点提示），绝不整卡不可用。删除或绕过死代理环境会使弱网下账号读取重新被网络拖住。
+- `SwitcherState` 包含 `ready`/`switching`/`error`/`offline`/`offlineCached`；`offline` 仅表示主应用未运行。auth status 输出为空（超时）时可用缓存兜底，但输出非空且无账号（全部注销）是真实状态，不得被缓存遮蔽。
+- 外部命令执行支持超时与环境变量覆盖（`CommandRunning.run(timeout:environment:)`），防止 gh 卡死拖住串行队列。
 - 保持 `SwitchCoordinator` 的串行化语义，不能让两个切换事务并发执行。
 - 切换必须保存原状态、执行 `gh auth switch` 与 `gh auth setup-git`、同步全局 Git 身份、完整验证，并在失败时回滚到实际原状态。
 - 账号列表是动态配置：`AccountStore`（UserDefaults 键 `GitSwitchAccounts`）持久化用户管理的账号，首次使用播种 `Aenvo` 与 `hubot` 两个默认账号；播种只在键不存在时发生，删除账号后不得自动恢复。首次启动时若列表仍是播种且没有任何账号在 gh 中授权（`SeededAccountReconciler`），自动清空列表引导用户新增自己的账号。
@@ -49,7 +52,8 @@
 - 只有点击“确定”才执行切换；切换中禁用重复操作；失败时保留窗口并显示简短错误。
 - 右上角“新增账号”打开表单：输入用户名和邮箱（邮箱留空自动用 noreply），设备码授权进度在窗口内展示（设备码旁提供“复制”按钮），授权结果确认后保存。
 - 每行账号提供删除入口，必须经过二次确认弹窗；删除当前账号会先自动切换到其他账号。
-- 切换完成后调用 `WidgetCenter.reloadAllTimelines()` 刷新状态。
+- 切换完成后调用 `WidgetCenter.reloadAllTimelines()` 刷新状态；后台验证导致可见状态变化时也会刷新。
+- GitHub 暂时不可达时小组件显示“离线缓存”：账号名照常、圆点变灰、副文案“GitHub 暂时不可达”，按钮仍可打开选择窗口；不得回退为整卡“暂时不可用”。
 
 ## 测试要求
 

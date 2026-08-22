@@ -63,8 +63,13 @@ final class StatusServer: @unchecked Sendable {
     private func processRequest(_ request: String, connection: NWConnection) {
         if request.hasPrefix("GET /v1/status ") {
             Task {
-                let status = await SwitchCoordinator.shared.currentStatus(refresh: true)
+                // 缓存优先：立即返回（本地读取毫秒级，弱网下不再拖垮小组件），
+                // 随后后台验证 GitHub 可达性，可见状态变化时刷新小组件时间线。
+                let status = await SwitchCoordinator.shared.currentStatus()
                 self.sendStatus(connection, status: status)
+                if await SwitchCoordinator.shared.refreshInBackground() {
+                    WidgetCenter.shared.reloadAllTimelines()
+                }
             }
             return
         }

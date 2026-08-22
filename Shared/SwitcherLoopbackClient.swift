@@ -6,7 +6,7 @@ struct SwitcherLoopbackClient {
     func fetchStatus() async -> SwitcherStatus {
         guard let url = URL(string: "\(baseURL)/v1/status") else { return .offline }
         var request = URLRequest(url: url)
-        request.timeoutInterval = 2
+        request.timeoutInterval = 3
         return await perform(request)
     }
 

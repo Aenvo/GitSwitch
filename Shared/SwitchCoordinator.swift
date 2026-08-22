@@ -7,6 +7,8 @@ actor SwitchCoordinator {
     private let defaults: UserDefaults
     private var status: SwitcherStatus = .offline
     private var isSwitching = false
+    private var lastBackgroundValidation: Date?
+    private var publishedSignature: String = ""
 
     init(engine: AccountSwitchingEngine = AccountSwitchingEngine(), defaults: UserDefaults = .standard) {
         self.engine = engine
@@ -15,13 +17,65 @@ actor SwitchCoordinator {
 
     func currentStatus(refresh: Bool = false) async -> SwitcherStatus {
         if refresh || status.state == .offline {
-            status = await engine.readStatus()
+            let (fresh, authUnavailable) = await engine.readStatusDetailed()
+            if fresh.activeAccount == nil, fresh.state == .error, authUnavailable, status.activeAccount != nil {
+                // 仅当 auth status 输出为空（半死网络超时）时保留缓存账号并标记离线缓存；
+                // 输出非空但没有账号（全部注销）是真实状态，不遮蔽。
+                status.state = .offlineCached
+                status.message = fresh.message
+                status.updatedAt = Date()
+            } else {
+                status = fresh
+            }
+            publishedSignature = Self.visibleSignature(of: status)
         }
         return status
     }
 
     var accounts: [GitHubAccount] {
         AccountStore.load(defaults: defaults)
+    }
+
+    /// 后台验证：账号来自本地读取，`gh api user` 仅用于探测 GitHub 可达性；
+    /// 不可达时降级为 offlineCached（账号照常显示）。返回 true 表示可见状态发生变化、
+    /// 需要刷新小组件时间线。至少间隔 30 秒，切换事务期间跳过。
+    @discardableResult
+    func refreshInBackground() async -> Bool {
+        guard !isSwitching else { return false }
+        if let last = lastBackgroundValidation, Date().timeIntervalSince(last) < 30 { return false }
+        lastBackgroundValidation = Date()
+
+        let remote = await engine.remoteLogin()
+        guard !isSwitching else { return false }
+        let (localRead, authUnavailable) = await engine.readStatusDetailed()
+        var local = localRead
+        if local.activeAccount == nil, remote == nil, authUnavailable, status.activeAccount != nil {
+            // 本地读取与远端探测都失败（半死网络）：保留缓存账号，标记离线缓存
+            local = status
+            local.state = .offlineCached
+            local.message = "GitHub 暂时不可达，显示本地状态"
+            local.updatedAt = Date()
+        } else if remote == nil, local.activeAccount != nil {
+            local.state = .offlineCached
+            local.message = "GitHub 暂时不可达，显示本地状态"
+        }
+        status = local
+
+        let signature = Self.visibleSignature(of: local)
+        guard signature != publishedSignature else { return false }
+        publishedSignature = signature
+        return true
+    }
+
+    /// 只比较用户可见字段（不含 updatedAt），用于判断是否需要刷新小组件时间线。
+    private static func visibleSignature(of status: SwitcherStatus) -> String {
+        [
+            status.state.rawValue,
+            status.activeAccount?.name ?? "-",
+            status.gitName ?? "-",
+            status.gitEmail ?? "-",
+            status.message ?? "-"
+        ].joined(separator: "|")
     }
 
     func switchAccount(to target: GitHubAccount) async -> SwitcherStatus {

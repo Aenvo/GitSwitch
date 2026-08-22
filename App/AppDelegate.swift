@@ -18,6 +18,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         server.start()
         Task {
             _ = await SwitchCoordinator.shared.currentStatus(refresh: true)
+            await SwitchCoordinator.shared.refreshInBackground()
             WidgetCenter.shared.reloadAllTimelines()
         }
         registerLoginItemIfPossible()

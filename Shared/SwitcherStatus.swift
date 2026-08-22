@@ -5,6 +5,8 @@ enum SwitcherState: String, Codable, Sendable {
     case switching
     case error
     case offline
+    /// 本地账号信息可用，但 GitHub 暂时不可达（显示离线缓存，不整卡不可用）
+    case offlineCached
 }
 
 struct SwitcherStatus: Codable, Equatable, Sendable {

@@ -63,6 +63,108 @@ final class AccountSwitchingEngineTests: XCTestCase {
         ))
     }
 
+    func testActiveLoginParsesAuthStatusText() {
+        let multiAccount = """
+        github.com
+          ✓ Logged in to github.com account Aenvo (keyring)
+          - Active account: true
+          ✓ Logged in to github.com account hubot (keyring)
+          - Active account: false
+        """
+        XCTAssertEqual(AccountSwitchingEngine.activeLogin(fromAuthStatusText: multiAccount), "Aenvo")
+
+        let singleLegacy = "✓ Logged in to github.com account monalisa (keyring)"
+        XCTAssertEqual(AccountSwitchingEngine.activeLogin(fromAuthStatusText: singleLegacy), "monalisa")
+
+        XCTAssertNil(AccountSwitchingEngine.activeLogin(fromAuthStatusText: "Not logged in to any GitHub account."))
+    }
+
+    func testReadStatusUsesLocalAuthStatusWithoutNetwork() async {
+        let runner = MockCommandRunner(active: aenvo)
+        runner.failApiUser = true
+        let engine = makeEngine(runner, defaults: makeDefaults())
+
+        let status = await engine.readStatus()
+
+        XCTAssertEqual(status.state, .ready)
+        XCTAssertEqual(status.activeAccount?.name, "Aenvo")
+        XCTAssertEqual(status.gitName, "Aenvo")
+        // 账号读取必须走死代理环境，确保不被网络校验拖住
+        XCTAssertEqual(runner.lastAuthStatusEnvironment?["HTTPS_PROXY"], AccountSwitchingEngine.localOnlyProxyEnvironment["HTTPS_PROXY"])
+    }
+
+    func testRefreshInBackgroundMarksOfflineCachedWhenGitHubUnreachable() async {
+        let runner = MockCommandRunner(active: aenvo)
+        let defaults = makeDefaults()
+        let coordinator = SwitchCoordinator(engine: makeEngine(runner, defaults: defaults), defaults: defaults)
+        _ = await coordinator.currentStatus(refresh: true)
+        runner.failApiUser = true
+
+        let changed = await coordinator.refreshInBackground()
+        let status = await coordinator.currentStatus()
+
+        XCTAssertTrue(changed)
+        XCTAssertEqual(status.state, .offlineCached)
+        XCTAssertEqual(status.activeAccount?.name, "Aenvo")
+        XCTAssertEqual(status.message, "GitHub 暂时不可达，显示本地状态")
+    }
+
+    func testRefreshInBackgroundKeepsReadyWhenReachableAndThrottles() async {
+        let runner = MockCommandRunner(active: aenvo)
+        let defaults = makeDefaults()
+        let coordinator = SwitchCoordinator(engine: makeEngine(runner, defaults: defaults), defaults: defaults)
+        _ = await coordinator.currentStatus(refresh: true)
+
+        // 可达：保持 ready，签名未变化无需刷新时间线
+        var changed = await coordinator.refreshInBackground()
+        var status = await coordinator.currentStatus()
+        XCTAssertFalse(changed)
+        XCTAssertEqual(status.state, .ready)
+
+        // 30 秒节流：紧随其后的第二次验证被跳过
+        runner.failApiUser = true
+        changed = await coordinator.refreshInBackground()
+        status = await coordinator.currentStatus()
+        XCTAssertFalse(changed)
+        XCTAssertEqual(status.state, .ready)
+    }
+
+    func testActiveLoginParsesOfflineFailureText() {
+        // 断网时 gh auth status 秒回，文案为 "Failed to log in"，本地仍标记激活账号
+        let offlineText = """
+        github.com
+          X Failed to log in to github.com account Aenvo (keyring)
+          - Active account: true
+          - The token in keyring is invalid.
+        """
+        XCTAssertEqual(AccountSwitchingEngine.activeLogin(fromAuthStatusText: offlineText), "Aenvo")
+    }
+
+    func testCurrentStatusKeepsCacheWhenAuthStatusTimesOut() async {
+        let runner = MockCommandRunner(active: aenvo)
+        let defaults = makeDefaults()
+        let coordinator = SwitchCoordinator(engine: makeEngine(runner, defaults: defaults), defaults: defaults)
+        _ = await coordinator.currentStatus(refresh: true)
+        runner.failAuthStatus = true
+
+        let status = await coordinator.currentStatus(refresh: true)
+
+        XCTAssertEqual(status.state, .offlineCached)
+        XCTAssertEqual(status.activeAccount?.name, "Aenvo")
+    }
+
+    func testCurrentStatusDoesNotMaskGenuinelyNoAccounts() async {
+        let runner = MockCommandRunner(active: aenvo, authorized: [])
+        let defaults = makeDefaults()
+        let coordinator = SwitchCoordinator(engine: makeEngine(runner, defaults: defaults), defaults: defaults)
+        _ = await coordinator.currentStatus(refresh: true)
+
+        let status = await coordinator.currentStatus(refresh: true)
+
+        XCTAssertEqual(status.state, .error)
+        XCTAssertNil(status.activeAccount)
+    }
+
     func testSuccessfulSwitchVerifiesAccountAndIdentity() async {
         let runner = MockCommandRunner(active: aenvo)
         let engine = makeEngine(runner, defaults: makeDefaults())
@@ -213,11 +315,14 @@ final class MockCommandRunner: CommandRunning, @unchecked Sendable {
     private var gitUserName: String
     private var gitUserEmail: String
     var failEmailWrite = false
+    var failApiUser = false
+    var failAuthStatus = false
     var commandDelayNanoseconds: UInt64 = 0
     private(set) var switchCommandCount = 0
     private(set) var logoutCommandCount = 0
     private(set) var lastLogoutUser: String?
     private(set) var switchTargets: [String] = []
+    private(set) var lastAuthStatusEnvironment: [String: String]?
 
     init(active: GitHubAccount, authorized: [GitHubAccount]? = nil) {
         self.authorized = authorized ?? AccountStore.seeds
@@ -226,7 +331,7 @@ final class MockCommandRunner: CommandRunning, @unchecked Sendable {
         self.gitUserEmail = active.email
     }
 
-    func run(executable: String, arguments: [String]) async -> CommandResult {
+    func run(executable: String, arguments: [String], timeout: TimeInterval?, environment: [String: String]?) async -> CommandResult {
         if commandDelayNanoseconds > 0 {
             try? await Task.sleep(nanoseconds: commandDelayNanoseconds)
         }
@@ -235,8 +340,23 @@ final class MockCommandRunner: CommandRunning, @unchecked Sendable {
 
         if executable == Toolchain.ghPath {
             if arguments.prefix(2) == ["api", "--hostname"] {
-                guard authorized.contains(where: { $0.name == activeName }) else { return fail() }
+                guard !failApiUser, authorized.contains(where: { $0.name == activeName }) else { return fail() }
                 return ok(activeName + "\n")
+            }
+            if arguments.prefix(2) == ["auth", "status"] {
+                lastAuthStatusEnvironment = environment
+                if failAuthStatus {
+                    // 模拟超时被终止：无任何输出
+                    return CommandResult(exitCode: -1, stdout: "", stderr: "")
+                }
+                guard !authorized.isEmpty else {
+                    return CommandResult(exitCode: 1, stdout: "", stderr: "Not logged in to any GitHub account.")
+                }
+                let text = authorized.map { account in
+                    let marker = account.name == activeName ? "true" : "false"
+                    return "  ✓ Logged in to github.com account \(account.name) (keyring)\n  - Active account: \(marker)"
+                }.joined(separator: "\n")
+                return CommandResult(exitCode: 0, stdout: "", stderr: text)
             }
             if arguments.prefix(2) == ["auth", "switch"], let userIndex = arguments.firstIndex(of: "--user") {
                 guard userIndex + 1 < arguments.count,

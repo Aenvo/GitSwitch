@@ -86,7 +86,7 @@ struct GitSwitchWidgetView: View {
             }
                 .buttonStyle(.plain)
                 .disabled(true)
-        case .ready, .error:
+        case .ready, .error, .offlineCached:
             if entry.status.activeAccount != nil {
                 Link(destination: accountChooserURL) {
                     Text("切换当前账号")
@@ -118,6 +118,7 @@ struct GitSwitchWidgetView: View {
         case .switching: return "请稍候"
         case .error: return entry.status.message ?? "切换失败"
         case .offline: return "助手暂时不可用"
+        case .offlineCached: return "GitHub 暂时不可达"
         }
     }
 
@@ -127,6 +128,7 @@ struct GitSwitchWidgetView: View {
         case .switching: return .yellow
         case .error: return .orange
         case .offline: return .secondary
+        case .offlineCached: return .gray
         }
     }
 
