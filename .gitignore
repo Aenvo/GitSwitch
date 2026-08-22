@@ -1,0 +1,31 @@
+# 本机构建产物
+build/
+DerivedData/
+*.xcresult
+
+# XcodeGen 生成的工程（配置源是 project.yml，克隆后运行 xcodegen generate 重新生成）
+*.xcodeproj
+
+# Xcode 用户态数据
+xcuserdata/
+*.xcuserstate
+*.xcuserdatad/
+
+# Swift Package Manager
+.swiftpm/
+.build/
+Package.resolved
+
+# macOS 系统文件
+.DS_Store
+
+# 交付物与压缩包
+*.app
+*.appex
+*.dmg
+*.zip
+
+# 证书与描述文件
+*.p12
+*.pem
+*.mobileprovision

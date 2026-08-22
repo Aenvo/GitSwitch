@@ -1,0 +1,91 @@
+name: GitSwitch
+options:
+  bundleIdPrefix: com.aenvo
+  deploymentTarget:
+    macOS: "15.0"
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    MARKETING_VERSION: "1.0"
+    CURRENT_PROJECT_VERSION: "1"
+    CODE_SIGN_STYLE: Automatic
+targets:
+  GitSwitch:
+    type: application
+    platform: macOS
+    sources:
+      - Shared
+      - App
+    info:
+      path: App/Info.plist
+      properties:
+        CFBundleDisplayName: GitSwitch
+        CFBundleURLTypes:
+          - CFBundleURLName: com.aenvo.GitSwitch
+            CFBundleURLSchemes:
+              - gitswitch
+        LSUIElement: true
+        NSPrincipalClass: NSApplication
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.aenvo.GitSwitch
+        PRODUCT_NAME: GitSwitch
+        ENABLE_APP_SANDBOX: NO
+    dependencies:
+      - target: GitSwitchWidget
+        embed: true
+  GitSwitchWidget:
+    type: app-extension
+    platform: macOS
+    sources:
+      - Shared
+      - Widget
+    info:
+      path: Widget/Info.plist
+      properties:
+        CFBundleDisplayName: GitSwitch
+        NSAppTransportSecurity:
+          NSAllowsLocalNetworking: true
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
+    entitlements:
+      path: Widget/Widget.entitlements
+      properties:
+        com.apple.security.network.client: true
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.aenvo.GitSwitch.widget
+        PRODUCT_NAME: GitSwitchWidget
+        APPLICATION_EXTENSION_API_ONLY: YES
+        ENABLE_APP_SANDBOX: YES
+  GitSwitchTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - Tests
+      - Shared
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.aenvo.GitSwitchTests
+        GENERATE_INFOPLIST_FILE: YES
+        CODE_SIGN_STYLE: Manual
+        CODE_SIGN_IDENTITY: "-"
+schemes:
+  GitSwitch:
+    build:
+      targets:
+        GitSwitch: all
+        GitSwitchWidget: all
+        GitSwitchTests: [test]
+    test:
+      targets:
+        - GitSwitchTests
+  GitSwitch-Live:
+    build:
+      targets:
+        GitSwitchTests: [test]
+    test:
+      targets:
+        - GitSwitchTests
+      environmentVariables:
+        RUN_LIVE_SWITCH_TESTS: "1"
