@@ -105,7 +105,9 @@
 
 - `.gitignore` 已就绪（2026-08-22）：忽略 `build/`、DerivedData、`*.xcodeproj`（XcodeGen 生成物，克隆后运行 `xcodegen generate` 重建）、Xcode 用户态数据、`.app`/压缩包与证书文件；不要提交本机构建产物。
 - 许可证为 MIT（`LICENSE`，© 2026 Aenvo）；更换许可证需用户确认。
-- 当前项目尚不是 Git 仓库。初始化 Git、创建远程仓库、提交、推送或更改仓库可见性都需要用户明确授权，不得自行执行。
+- Git 仓库已建立：私有仓库 `Aenvo/GitSwitch`（https://github.com/Aenvo/GitSwitch，2026-08-22 创建并推送）。agent 发起的提交、推送、更改仓库设置仍需用户明确授权。
+- CI（`.github/workflows/ci.yml`）：push 到 main 或 PR 时在 macOS runner 上运行单元测试，注意私有仓库 macOS runner 按 10 倍计费，保持触发克制。
+- Release（`.github/workflows/release.yml`）：推送 `v*` 标签或手动 workflow_dispatch 触发；版本号取自 `project.yml` 的 `MARKETING_VERSION`，产物为 ad-hoc 签名的 `GitSwitch-<版本>.app.zip` 与 `.sha256`。本机安装仍以 `scripts/build_and_install.sh` 为准。
 - 敏感信息审计已完成（2026-08-22）：未发现 token、私钥、密码或绝对路径；个人 noreply 邮箱仅存在于 `Shared/AccountStore.swift` 的默认播种和 `Tests/AccountSwitchingEngineTests.swift` 的测试夹具（私有仓库可接受）。Widget 占位符已改为中性示例。若未来公开仓库：需把播种改为空列表加首次引导、测试夹具改用虚构数据，并复查交付文档。
 - 交付新应用包时，从已验证的 `/Applications` 安装版本生成压缩包，并同步更新源码包和交接说明。
 
