@@ -6,8 +6,8 @@ options:
 settings:
   base:
     SWIFT_VERSION: "5.0"
-    MARKETING_VERSION: "1.0"
-    CURRENT_PROJECT_VERSION: "1"
+    MARKETING_VERSION: "1.1"
+    CURRENT_PROJECT_VERSION: "2"
     CODE_SIGN_STYLE: Automatic
 targets:
   GitSwitch:
@@ -20,6 +20,8 @@ targets:
       path: App/Info.plist
       properties:
         CFBundleDisplayName: GitSwitch
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         CFBundleURLTypes:
           - CFBundleURLName: com.aenvo.GitSwitch
             CFBundleURLSchemes:
@@ -44,6 +46,8 @@ targets:
       path: Widget/Info.plist
       properties:
         CFBundleDisplayName: GitSwitch
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         NSAppTransportSecurity:
           NSAllowsLocalNetworking: true
         NSExtension:

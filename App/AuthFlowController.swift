@@ -24,7 +24,7 @@ final class AuthFlowController: ObservableObject {
 
         let ghProcess = Process()
         let stderrPipe = Pipe()
-        ghProcess.executableURL = URL(fileURLWithPath: AccountSwitchingEngine.ghPath)
+        ghProcess.executableURL = URL(fileURLWithPath: Toolchain.ghPath)
         ghProcess.arguments = [
             "auth", "login",
             "--hostname", "github.com",
@@ -104,7 +104,7 @@ final class AuthFlowController: ObservableObject {
     /// gh 退出码为 0 后，读取实际授权的登录名。结果在 phase 中以 authenticated 发布。
     private func resolveAuthenticatedLogin() async {
         let loginResult = await runner.run(
-            executable: AccountSwitchingEngine.ghPath,
+            executable: Toolchain.ghPath,
             arguments: ["api", "--hostname", "github.com", "user", "--jq", ".login"]
         )
         let login = loginResult.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -118,7 +118,7 @@ final class AuthFlowController: ObservableObject {
     /// 授权成功后由调用方读取，用于生成 noreply 邮箱默认值。
     func userID(for login: String) async -> String? {
         let result = await runner.run(
-            executable: AccountSwitchingEngine.ghPath,
+            executable: Toolchain.ghPath,
             arguments: ["api", "--hostname", "github.com", "user", "--jq", ".id"]
         )
         let id = result.stdout.trimmingCharacters(in: .whitespacesAndNewlines)

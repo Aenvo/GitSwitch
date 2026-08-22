@@ -40,6 +40,29 @@ final class AccountSwitchingEngineTests: XCTestCase {
         XCTAssertFalse(AccountStore.load(defaults: defaults).contains { $0.name == ykSteven.name })
     }
 
+    func testToolchainResolvesPaths() {
+        XCTAssertFalse(Toolchain.ghPath.isEmpty)
+        XCTAssertTrue(FileManager.default.isExecutableFile(atPath: Toolchain.gitPath))
+    }
+
+    func testSeededAccountReconciler() {
+        // 播种账号中至少一个已在 gh 授权（老用户机器）→ 保持不变
+        XCTAssertNil(SeededAccountReconciler.reconciledList(
+            stored: AccountStore.seeds,
+            ghAuthStatusText: "✓ Logged in to github.com account Aenvo"
+        ))
+        // 播种账号均未授权（新用户机器）→ 清空引导新增
+        XCTAssertEqual(
+            SeededAccountReconciler.reconciledList(stored: AccountStore.seeds, ghAuthStatusText: "You are not logged into any GitHub account."),
+            []
+        )
+        // 用户已自行管理过列表 → 不做调整
+        XCTAssertNil(SeededAccountReconciler.reconciledList(
+            stored: [GitHubAccount(name: "octocat", email: "583231+octocat@users.noreply.github.com")],
+            ghAuthStatusText: ""
+        ))
+    }
+
     func testSuccessfulSwitchVerifiesAccountAndIdentity() async {
         let runner = MockCommandRunner(active: aenvo)
         let engine = makeEngine(runner, defaults: makeDefaults())
@@ -210,7 +233,7 @@ final class MockCommandRunner: CommandRunning, @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
 
-        if executable == AccountSwitchingEngine.ghPath {
+        if executable == Toolchain.ghPath {
             if arguments.prefix(2) == ["api", "--hostname"] {
                 guard authorized.contains(where: { $0.name == activeName }) else { return fail() }
                 return ok(activeName + "\n")
@@ -240,7 +263,7 @@ final class MockCommandRunner: CommandRunning, @unchecked Sendable {
             }
         }
 
-        if executable == AccountSwitchingEngine.gitPath,
+        if executable == Toolchain.gitPath,
            arguments.prefix(2) == ["config", "--global"] {
             if arguments.count == 4, arguments[2] == "--get" {
                 if arguments[3] == "user.name" { return ok(gitUserName + "\n") }

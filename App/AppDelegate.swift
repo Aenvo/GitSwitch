@@ -26,7 +26,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
             guard let self else { return }
             if firstLaunch {
-                self.showSetupWindow()
+                Task { @MainActor in
+                    await self.reconcileSeededAccountsIfNeeded()
+                    self.showSetupWindow()
+                }
             }
             UserDefaults.standard.set(true, forKey: "didCompleteFirstLaunch")
         }
@@ -52,6 +55,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             fputs("GitSwitch: login item registered\n", stderr)
         } catch {
             fputs("GitSwitch: login item registration failed: \(error.localizedDescription)\n", stderr)
+        }
+    }
+
+    /// 首次启动时核对默认播种账号：若 gh 中没有任何一个已授权（新用户机器），
+    /// 清空示例账号列表，引导用户通过“新增账号”添加自己的账号。
+    private func reconcileSeededAccountsIfNeeded() async {
+        let stored = AccountStore.load()
+        guard stored == AccountStore.seeds else { return }
+        let status = await ProcessCommandRunner().run(
+            executable: Toolchain.ghPath,
+            arguments: ["auth", "status", "--hostname", "github.com"]
+        )
+        let text = status.stdout + status.stderr
+        if let reconciled = SeededAccountReconciler.reconciledList(stored: stored, ghAuthStatusText: text) {
+            AccountStore.save(reconciled)
         }
     }
 

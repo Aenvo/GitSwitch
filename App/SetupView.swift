@@ -26,8 +26,8 @@ struct SetupView: View {
 
             GroupBox {
                 VStack(spacing: 10) {
-                    checkRow("GitHub CLI", ok: ghInstalled, detail: "/opt/homebrew/bin/gh")
-                    checkRow("Git", ok: gitInstalled, detail: "/usr/bin/git")
+                    checkRow("GitHub CLI", ok: ghInstalled, detail: ghInstalled ? Toolchain.ghPath : "未找到，请 brew install gh")
+                    checkRow("Git", ok: gitInstalled, detail: Toolchain.gitPath)
                     checkRow("已配置账号", ok: accountsReady, detail: accountSummary)
                     checkRow("登录后后台运行", ok: loginStatus == .enabled, detail: loginStatusText)
                 }
@@ -88,19 +88,19 @@ struct SetupView: View {
 
     @MainActor
     private func refresh() async {
-        ghInstalled = FileManager.default.isExecutableFile(atPath: AccountSwitchingEngine.ghPath)
-        gitInstalled = FileManager.default.isExecutableFile(atPath: AccountSwitchingEngine.gitPath)
+        ghInstalled = FileManager.default.isExecutableFile(atPath: Toolchain.ghPath)
+        gitInstalled = FileManager.default.isExecutableFile(atPath: Toolchain.gitPath)
         status = await SwitchCoordinator.shared.currentStatus(refresh: true)
         loginStatus = SMAppService.mainApp.status
 
         let auth = await ProcessCommandRunner().run(
-            executable: AccountSwitchingEngine.ghPath,
+            executable: Toolchain.ghPath,
             arguments: ["auth", "status", "--hostname", "github.com"]
         )
         let authText = auth.stdout + auth.stderr
         let storedAccounts = AccountStore.load()
         accountsReady = auth.succeeded && !storedAccounts.isEmpty
-        accountSummary = storedAccounts.map(\.name).joined(separator: " · ")
+        accountSummary = storedAccounts.isEmpty ? "未配置，请点击小组件后新增账号" : storedAccounts.map(\.name).joined(separator: " · ")
     }
 
     @MainActor
