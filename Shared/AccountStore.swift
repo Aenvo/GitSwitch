@@ -28,6 +28,17 @@ enum AccountStore {
         save(accounts, defaults: defaults)
     }
 
+    /// 按登录名替换账号配置；不存在时等同 add。
+    static func update(_ account: GitHubAccount, defaults: UserDefaults = .standard) {
+        var accounts = load(defaults: defaults)
+        if let index = accounts.firstIndex(where: { $0.name == account.name }) {
+            accounts[index] = account
+        } else {
+            accounts.append(account)
+        }
+        save(accounts, defaults: defaults)
+    }
+
     static func remove(_ account: GitHubAccount, defaults: UserDefaults = .standard) {
         save(load(defaults: defaults).filter { $0.name != account.name }, defaults: defaults)
     }

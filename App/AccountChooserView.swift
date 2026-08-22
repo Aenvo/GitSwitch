@@ -11,6 +11,8 @@ struct AccountChooserView: View {
     @State private var message: String?
     @State private var isAddingAccount = false
     @State private var pendingDeletion: GitHubAccount?
+    @State private var editingAccount: GitHubAccount?
+    @State private var hoveredAccount: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
@@ -82,6 +84,13 @@ struct AccountChooserView: View {
                 onDismiss: { isAddingAccount = false }
             )
         }
+        .sheet(item: $editingAccount) { account in
+            AccountEditView(
+                account: account,
+                onCommit: updateAccount,
+                onDismiss: { editingAccount = nil }
+            )
+        }
         .alert(
             "确定要删除该账号吗？",
             isPresented: Binding(
@@ -131,23 +140,47 @@ struct AccountChooserView: View {
             .buttonStyle(.plain)
             .disabled(isSwitching)
 
-            Button {
-                pendingDeletion = account
-            } label: {
-                Image(systemName: "trash")
-                    .font(.callout)
-                    .frame(width: 36, height: 36)
+            // 悬浮到条目时才插入编辑/删除入口：默认不占位，“当前”标记贴住行尾；
+            // 悬浮出现按钮时将其向左挤压（带动画）。
+            if isHovering(account) && !isSwitching {
+                HStack(spacing: 2) {
+                    rowAction(icon: "pencil", help: "编辑 Git 提交身份") {
+                        editingAccount = account
+                    }
+                    rowAction(icon: "trash", help: "删除账号") {
+                        pendingDeletion = account
+                    }
+                }
+                .padding(.trailing, 6)
+                .transition(.opacity)
             }
-            .buttonStyle(.borderless)
-            .foregroundStyle(.secondary)
-            .disabled(isSwitching)
-            .help("删除账号")
-            .padding(.trailing, 6)
+        }
+        .onHover { hovering in
+            withAnimation(.easeInOut(duration: 0.12)) {
+                hoveredAccount = hovering ? account.name : nil
+            }
         }
         .background(
             selectedAccount == account ? Color.accentColor.opacity(0.12) : Color.secondary.opacity(0.06),
             in: RoundedRectangle(cornerRadius: 10)
         )
+    }
+
+    private func isHovering(_ account: GitHubAccount) -> Bool {
+        hoveredAccount == account.name
+    }
+
+    private func rowAction(icon: String, help: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: icon)
+                .font(.callout)
+                .frame(width: 30, height: 36)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.borderless)
+        .foregroundStyle(.secondary)
+        .disabled(isSwitching)
+        .help(help)
     }
 
     @MainActor
@@ -199,6 +232,26 @@ struct AccountChooserView: View {
             return false
         }
         selectedAccount = account
+        return true
+    }
+
+    @MainActor
+    private func updateAccount(_ updated: GitHubAccount) async -> Bool {
+        isSwitching = true
+        message = nil
+        let result = await SwitchCoordinator.shared.updateAccount(updated)
+        status = result
+        accounts = await SwitchCoordinator.shared.accounts
+        if selectedAccount?.name == updated.name {
+            selectedAccount = updated
+        }
+        isSwitching = false
+        WidgetCenter.shared.reloadAllTimelines()
+
+        guard result.state != .error else {
+            message = result.message ?? "保存失败，请重试"
+            return false
+        }
         return true
     }
 

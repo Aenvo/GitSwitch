@@ -7,25 +7,33 @@ struct AddAccountView: View {
     let onDismiss: () -> Void
 
     @StateObject private var auth = AuthFlowController()
-    @State private var username = ""
     @State private var email = ""
+    @State private var suggestedEmail: String?
     @State private var isSaving = false
     @State private var saveMessage: String?
-    @State private var copiedValue: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             VStack(alignment: .leading, spacing: 4) {
                 Text("新增 GitHub 账号")
                     .font(.title2.bold())
-                Text("填写账号信息后，将在浏览器中完成 GitHub 授权。")
+                Text("在浏览器中完成 GitHub 授权，授权码会自动显示在这里。")
                     .font(.callout)
                     .foregroundStyle(.secondary)
             }
 
             switch auth.phase {
-            case .idle, .failed:
-                inputForm
+            case .idle:
+                HStack(spacing: 8) {
+                    ProgressView()
+                        .controlSize(.small)
+                    Text("正在生成一次性代码…")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                }
+            case .failed(let message):
+                failureView(message)
             case .waitingForBrowser:
                 waitingView
             case .authenticated(let login):
@@ -35,8 +43,8 @@ struct AddAccountView: View {
             Spacer(minLength: 0)
 
             HStack {
-                if saveMessage != nil {
-                    Text(saveMessage ?? "")
+                if let saveMessage {
+                    Text(saveMessage)
                         .font(.caption)
                         .foregroundStyle(.red)
                         .lineLimit(2)
@@ -47,39 +55,24 @@ struct AddAccountView: View {
             }
         }
         .padding(22)
-        .frame(width: 420, height: 380)
+        .frame(width: 420, height: 340)
+        .task {
+            if !auth.isRunning {
+                auth.start()
+            }
+        }
     }
 
-    private var inputForm: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            if case let .failed(message) = auth.phase {
-                Text(message)
-                    .font(.caption)
-                    .foregroundStyle(.red)
-            }
-            VStack(alignment: .leading, spacing: 4) {
-                Text("用户名")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                TextField("GitHub 用户名", text: $username)
-                    .textFieldStyle(.roundedBorder)
-            }
-            VStack(alignment: .leading, spacing: 4) {
-                Text("邮箱")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                TextField("提交用邮箱（留空自动使用 GitHub noreply 邮箱）", text: $email)
-                    .textFieldStyle(.roundedBorder)
-            }
+    private func failureView(_ message: String) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text(message)
+                .font(.callout)
+                .foregroundStyle(.red)
             Button {
                 auth.start()
             } label: {
-                Label("开始授权", systemImage: "safari")
-                    .frame(maxWidth: .infinity)
+                Label("重新授权", systemImage: "arrow.clockwise")
             }
-            .controlSize(.large)
-            .buttonStyle(.borderedProminent)
-            .disabled(username.trimmingCharacters(in: .whitespaces).isEmpty)
         }
     }
 
@@ -141,11 +134,6 @@ struct AddAccountView: View {
         VStack(alignment: .leading, spacing: 14) {
             Label("授权成功：\(login)", systemImage: "checkmark.circle.fill")
                 .foregroundStyle(.green)
-            if !normalizedEnteredUsername.isEmpty && normalizedEnteredUsername != login {
-                Text("输入的用户名（\(normalizedEnteredUsername)）与授权账号不一致，将按授权账号 \(login) 保存。")
-                    .font(.caption)
-                    .foregroundStyle(.orange)
-            }
             VStack(alignment: .leading, spacing: 4) {
                 Text("Git 提交邮箱")
                     .font(.caption)
@@ -165,17 +153,24 @@ struct AddAccountView: View {
         }
         .task {
             if email.isEmpty {
-                email = await defaultEmail(for: login)
+                let derived = await defaultEmail(for: login)
+                suggestedEmail = derived
+                email = derived
             }
         }
     }
 
-    private var normalizedEnteredUsername: String {
-        username.trimmingCharacters(in: .whitespacesAndNewlines)
-    }
+    @State private var copiedValue: String?
 
     private var normalizedEmail: String {
         email.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private func defaultEmail(for login: String) async -> String {
+        if let id = await auth.userID(for: login) {
+            return GitHubAccount.noreplyEmail(userID: id, login: login)
+        }
+        return "\(login)@users.noreply.github.com"
     }
 
     private func copyToPasteboard(_ value: String) {
@@ -190,18 +185,15 @@ struct AddAccountView: View {
         }
     }
 
-    private func defaultEmail(for login: String) async -> String {
-        if let id = await auth.userID(for: login) {
-            return GitHubAccount.noreplyEmail(userID: id, login: login)
-        }
-        return "\(login)@users.noreply.github.com"
-    }
-
     private func save(login: String) async {
         guard !isSaving else { return }
         isSaving = true
         saveMessage = nil
-        let account = GitHubAccount(name: login, email: normalizedEmail)
+        let account = GitHubAccount(
+            name: login,
+            email: normalizedEmail,
+            defaultEmail: suggestedEmail ?? normalizedEmail
+        )
         let success = await onCommit(account)
         isSaving = false
         if success {

@@ -99,6 +99,20 @@ actor SwitchCoordinator {
         return result
     }
 
+    /// 编辑账号的 Git 提交身份：写入列表；若是当前账号则立即同步全局 git 配置。
+    func updateAccount(_ updated: GitHubAccount) async -> SwitcherStatus {
+        AccountStore.update(updated, defaults: defaults)
+        let current = await engine.readStatus()
+        if current.activeAccount?.name == updated.name {
+            await engine.applyGitIdentity(for: updated)
+            status = await engine.readStatus()
+        } else {
+            status = current
+        }
+        publishedSignature = Self.visibleSignature(of: status)
+        return status
+    }
+
     /// 删除账号：若删除的是当前账号，先切换到列表中的其他账号，再注销 gh 凭据并从列表移除。
     func removeAccount(_ target: GitHubAccount) async -> SwitcherStatus {
         guard !isSwitching else { return status }

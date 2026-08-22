@@ -130,7 +130,7 @@ struct AccountSwitchingEngine: Sendable {
             arguments: ["auth", "setup-git", "--hostname", "github.com"]
         )
         let nameResult = setupResult.succeeded
-            ? await runner.run(executable: Toolchain.gitPath, arguments: ["config", "--global", "user.name", target.gitName])
+            ? await runner.run(executable: Toolchain.gitPath, arguments: ["config", "--global", "user.name", target.gitUserName])
             : setupResult
         let emailResult = nameResult.succeeded
             ? await runner.run(executable: Toolchain.gitPath, arguments: ["config", "--global", "user.email", target.email])
@@ -139,7 +139,7 @@ struct AccountSwitchingEngine: Sendable {
         if setupResult.succeeded && nameResult.succeeded && emailResult.succeeded {
             let verified = await readStatus()
             if verified.activeAccount?.name == target.name,
-               verified.gitName == target.gitName,
+               verified.gitName == target.gitUserName,
                verified.gitEmail == target.email {
                 return verified
             }
@@ -162,6 +162,18 @@ struct AccountSwitchingEngine: Sendable {
         await runner.run(
             executable: Toolchain.ghPath,
             arguments: ["auth", "logout", "--hostname", "github.com", "--user", account.name]
+        )
+    }
+
+    /// 仅同步全局 Git 身份（不涉及 gh），用于编辑当前账号的提交身份后立即生效。
+    func applyGitIdentity(for account: GitHubAccount) async {
+        _ = await runner.run(
+            executable: Toolchain.gitPath,
+            arguments: ["config", "--global", "user.name", account.gitUserName]
+        )
+        _ = await runner.run(
+            executable: Toolchain.gitPath,
+            arguments: ["config", "--global", "user.email", account.email]
         )
     }
 
