@@ -135,6 +135,7 @@ struct AccountChooserView: View {
                 }
                 .padding(.vertical, 10)
                 .padding(.leading, 10)
+                .padding(.trailing, 12)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
