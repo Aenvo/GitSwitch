@@ -39,7 +39,7 @@ struct SetupView: View {
                     Text("当前账号")
                         .font(.caption)
                         .foregroundStyle(.secondary)
-                    Text(status.activeAccount?.name ?? "无法读取")
+                    Text(status.activeAccount?.gitUserName ?? "无法读取")
                         .font(.headline)
                 }
                 Spacer()

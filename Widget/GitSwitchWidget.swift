@@ -105,7 +105,7 @@ struct GitSwitchWidgetView: View {
     }
 
     private var accountTitle: String {
-        entry.status.activeAccount?.name ?? "暂时不可用"
+        entry.status.activeAccount?.gitUserName ?? "暂时不可用"
     }
 
     private var statusHeading: String {

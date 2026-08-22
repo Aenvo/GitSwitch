@@ -13,6 +13,8 @@ struct AccountChooserView: View {
     @State private var pendingDeletion: GitHubAccount?
     @State private var editingAccount: GitHubAccount?
     @State private var hoveredAccount: String?
+    @State private var notice: String?
+    @State private var noticeTask: Task<Void, Never>?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
@@ -48,6 +50,13 @@ struct AccountChooserView: View {
                 }
             }
 
+            if let notice {
+                Text(notice)
+                    .font(.caption)
+                    .foregroundStyle(.green)
+                    .lineLimit(2)
+            }
+
             if let message {
                 Text(message)
                     .font(.caption)
@@ -78,13 +87,13 @@ struct AccountChooserView: View {
         }
         .padding(22)
         .task { await loadStatus() }
-        .sheet(isPresented: $isAddingAccount) {
+        .sheet(isPresented: $isAddingAccount, onDismiss: reloadAfterSheet) {
             AddAccountView(
                 onCommit: adoptAccount,
                 onDismiss: { isAddingAccount = false }
             )
         }
-        .sheet(item: $editingAccount) { account in
+        .sheet(item: $editingAccount, onDismiss: reloadAfterSheet) { account in
             AccountEditView(
                 account: account,
                 onCommit: updateAccount,
@@ -119,7 +128,7 @@ struct AccountChooserView: View {
                         .font(.title3)
                         .foregroundStyle(selectedAccount == account ? Color.accentColor : Color.secondary)
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(account.name)
+                        Text(account.gitUserName)
                             .font(.headline)
                         Text(account.email)
                             .font(.caption)
@@ -253,7 +262,32 @@ struct AccountChooserView: View {
             message = result.message ?? "保存失败，请重试"
             return false
         }
+        if status.activeAccount?.name == updated.name {
+            showNotice("已更新 \(updated.name) 的 Git 身份，并写入全局配置")
+        } else {
+            showNotice("已更新 \(updated.name) 的 Git 身份，切换到该账号时生效")
+        }
         return true
+    }
+
+    /// 表单关闭后兜底刷新列表与状态，保证界面与存储一致（不改动已选中的账号）。
+    @MainActor
+    private func reloadAfterSheet() {
+        Task {
+            accounts = await SwitchCoordinator.shared.accounts
+            status = await SwitchCoordinator.shared.currentStatus()
+        }
+    }
+
+    private func showNotice(_ text: String) {
+        notice = text
+        noticeTask?.cancel()
+        noticeTask = Task {
+            try? await Task.sleep(nanoseconds: 4_000_000_000)
+            if !Task.isCancelled {
+                await MainActor.run { notice = nil }
+            }
+        }
     }
 
     @MainActor
