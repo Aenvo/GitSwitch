@@ -1,0 +1,68 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build and publish app package
+    runs-on: macos-15
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Read version from project.yml
+        id: version
+        run: |
+          VERSION=$(grep 'MARKETING_VERSION' project.yml | head -1 | sed -E 's/.*"([^"]+)".*/\1/')
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Build Release
+        run: |
+          xcodegen generate
+          xcodebuild \
+            -project GitSwitch.xcodeproj \
+            -scheme GitSwitch \
+            -configuration Release \
+            -derivedDataPath build/Release \
+            CODE_SIGN_STYLE=Manual \
+            CODE_SIGN_IDENTITY=- \
+            DEVELOPMENT_TEAM= \
+            build
+
+      - name: Package
+        run: |
+          VERSION='${{ steps.version.outputs.version }}'
+          ditto -c -k --sequesterRsrc --keepParent \
+            build/Release/Build/Products/Release/GitSwitch.app \
+            "GitSwitch-$VERSION.app.zip"
+          shasum -a 256 "GitSwitch-$VERSION.app.zip" > "GitSwitch-$VERSION.app.zip.sha256"
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION='${{ steps.version.outputs.version }}'
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            TAG="$GITHUB_REF_NAME"
+          else
+            TAG="v$VERSION"
+          fi
+          echo "Publishing $TAG"
+          gh release create "$TAG" \
+            --title "GitSwitch $TAG" \
+            --notes "GitSwitch $VERSION
+
+          附件为 ad-hoc 签名的应用包（.app.zip）及 SHA-256 校验文件。
+          本机安装仍推荐使用 scripts/build_and_install.sh；其他设备首次运行需右键打开以绕过 Gatekeeper。" \
+            "GitSwitch-$VERSION.app.zip" \
+            "GitSwitch-$VERSION.app.zip.sha256" \
+          || gh release upload "$TAG" "GitSwitch-$VERSION.app.zip" "GitSwitch-$VERSION.app.zip.sha256" --clobber
