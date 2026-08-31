@@ -62,7 +62,9 @@ jobs:
             --notes "GitSwitch $VERSION
 
           附件为 ad-hoc 签名的应用包（.app.zip）及 SHA-256 校验文件。
-          本机安装仍推荐使用 scripts/build_and_install.sh；其他设备首次运行需右键打开以绕过 Gatekeeper。" \
+          本机安装仍推荐使用 scripts/build_and_install.sh；其他设备首次运行需右键打开以绕过 Gatekeeper。
+
+          变更记录：https://github.com/${GITHUB_REPOSITORY}/blob/${TAG}/CHANGELOG.md" \
             "GitSwitch-$VERSION.app.zip" \
             "GitSwitch-$VERSION.app.zip.sha256" \
           || gh release upload "$TAG" "GitSwitch-$VERSION.app.zip" "GitSwitch-$VERSION.app.zip.sha256" --clobber

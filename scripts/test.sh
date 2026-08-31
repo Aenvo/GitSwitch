@@ -21,6 +21,10 @@ xcodebuild \
 
 test_bundle="$project_dir/build/Tests/Build/Products/Debug/GitSwitchTests.xctest"
 if [ "$live" -eq 1 ]; then
+  : "${GITSWITCH_LIVE_ACCOUNT_1_LOGIN:?Set GITSWITCH_LIVE_ACCOUNT_1_LOGIN before --live}"
+  : "${GITSWITCH_LIVE_ACCOUNT_1_EMAIL:?Set GITSWITCH_LIVE_ACCOUNT_1_EMAIL before --live}"
+  : "${GITSWITCH_LIVE_ACCOUNT_2_LOGIN:?Set GITSWITCH_LIVE_ACCOUNT_2_LOGIN before --live}"
+  : "${GITSWITCH_LIVE_ACCOUNT_2_EMAIL:?Set GITSWITCH_LIVE_ACCOUNT_2_EMAIL before --live}"
   RUN_LIVE_SWITCH_TESTS=1 xcrun xctest "$test_bundle"
 else
   xcrun xctest "$test_bundle"

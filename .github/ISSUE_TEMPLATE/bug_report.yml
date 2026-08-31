@@ -1,0 +1,57 @@
+name: Bug 报告 / Bug report
+description: 报告可复现的问题 / Report a reproducible problem
+title: "[Bug] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        请先删除账号、邮箱、token、完整认证输出和个人路径。安全漏洞请使用仓库 Security 页面，不要填写此表单。
+        Remove accounts, email addresses, tokens, complete authentication output, and personal paths. Use the Security page for vulnerabilities.
+  - type: input
+    id: version
+    attributes:
+      label: GitSwitch 版本 / Version
+      placeholder: "1.3.2 or commit SHA"
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: 环境 / Environment
+      description: macOS、GitHub CLI 和 Git 版本 / macOS, GitHub CLI, and Git versions
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: 复现步骤 / Reproduction steps
+      placeholder: "1. …\n2. …\n3. …"
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: 预期结果 / Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: 实际结果 / Actual behavior
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: 已脱敏日志 / Redacted logs
+      description: 不要粘贴 token、完整 gh auth status、账号、邮箱或个人路径 / Do not include tokens, full gh auth status, accounts, email addresses, or personal paths
+      render: shell
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: 提交前确认 / Pre-submission checks
+      options:
+        - label: 我已确认这不是需要私密报告的安全漏洞 / I confirmed this is not a vulnerability requiring private disclosure
+          required: true
+        - label: 我已删除敏感信息和个人数据 / I removed secrets and personal data
+          required: true

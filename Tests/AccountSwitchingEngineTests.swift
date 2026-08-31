@@ -1,18 +1,24 @@
 import XCTest
 
-final class AccountSwitchingEngineTests: XCTestCase {
-    private var aenvo: GitHubAccount {
-        GitHubAccount(name: "Aenvo", email: "octocat@users.noreply.github.com")
-    }
+private enum TestFixtures {
+    static let primary = GitHubAccount(name: "octocat", email: "583231+octocat@users.noreply.github.com")
+    static let secondary = GitHubAccount(name: "hubot", email: "123456+hubot@users.noreply.github.com")
+}
 
-    private var ykSteven: GitHubAccount {
-        GitHubAccount(name: "hubot", email: "hubot@users.noreply.github.com")
-    }
+final class AccountSwitchingEngineTests: XCTestCase {
+    private var primaryAccount: GitHubAccount { TestFixtures.primary }
+    private var secondaryAccount: GitHubAccount { TestFixtures.secondary }
 
     private func makeDefaults() -> UserDefaults {
         let name = "GitSwitchTests-\(UUID().uuidString)"
         UserDefaults().removePersistentDomain(forName: name)
         return UserDefaults(suiteName: name)!
+    }
+
+    private func makeConfiguredDefaults() -> UserDefaults {
+        let defaults = makeDefaults()
+        AccountStore.save([primaryAccount, secondaryAccount], defaults: defaults)
+        return defaults
     }
 
     /// 引擎与协调器共享同一个 defaults，模拟真实运行时账号列表与状态映射的一致性。
@@ -21,51 +27,54 @@ final class AccountSwitchingEngineTests: XCTestCase {
     }
 
     func testAccountProfiles() {
-        XCTAssertEqual(aenvo.gitUserName, "Aenvo")
-        XCTAssertEqual(aenvo.gitEmail, "octocat@users.noreply.github.com")
-        XCTAssertEqual(ykSteven.gitEmail, "hubot@users.noreply.github.com")
+        XCTAssertEqual(primaryAccount.gitUserName, "octocat")
+        XCTAssertEqual(primaryAccount.gitEmail, "583231+octocat@users.noreply.github.com")
+        XCTAssertEqual(secondaryAccount.gitEmail, "123456+hubot@users.noreply.github.com")
         XCTAssertEqual(GitHubAccount.noreplyEmail(userID: "42", login: "octocat"), "42+octocat@users.noreply.github.com")
 
         let customized = GitHubAccount(
-            name: "Aenvo",
+            name: "octocat",
             email: "custom@example.com",
             gitName: "Display Name",
-            defaultEmail: aenvo.email
+            defaultEmail: primaryAccount.email
         )
         XCTAssertEqual(customized.gitUserName, "Display Name")
-        XCTAssertEqual(customized.resetEmail, aenvo.email)
+        XCTAssertEqual(customized.resetEmail, primaryAccount.email)
     }
 
     func testAccountDecodesLegacyStoredJSON() throws {
         // 旧版存储没有 gitName/defaultEmail 字段，解码后应回落到默认语义
-        let legacy = #" [{"name":"Aenvo","email":"octocat@users.noreply.github.com"}] "#
+        let legacy = #" [{"name":"octocat","email":"583231+octocat@users.noreply.github.com"}] "#
         let accounts = try JSONDecoder().decode([GitHubAccount].self, from: Data(legacy.utf8))
         XCTAssertEqual(accounts.count, 1)
-        XCTAssertEqual(accounts[0].gitUserName, "Aenvo")
-        XCTAssertEqual(accounts[0].resetEmail, "octocat@users.noreply.github.com")
+        XCTAssertEqual(accounts[0].gitUserName, "octocat")
+        XCTAssertEqual(accounts[0].resetEmail, "583231+octocat@users.noreply.github.com")
     }
 
     func testAccountStoreUpdatesByIdentity() {
         let defaults = makeDefaults()
-        let customized = GitHubAccount(name: "Aenvo", email: "new@example.com", gitName: "Aenvo Dev")
+        let customized = GitHubAccount(name: "octocat", email: "new@example.com", gitName: "Octocat Dev")
         AccountStore.update(customized, defaults: defaults)
 
         let stored = AccountStore.load(defaults: defaults)
-        XCTAssertEqual(stored.count, AccountStore.seeds.count)
-        XCTAssertEqual(stored.first { $0.name == "Aenvo" }, customized)
+        XCTAssertEqual(stored.count, 1)
+        XCTAssertEqual(stored.first { $0.name == "octocat" }, customized)
     }
 
-    func testAccountStoreSeedsPersistsAndRemoves() {
+    func testAccountStoreStartsEmptyPersistsAndRemoves() {
         let defaults = makeDefaults()
-        XCTAssertEqual(AccountStore.load(defaults: defaults), AccountStore.seeds)
+        XCTAssertTrue(AccountStore.load(defaults: defaults).isEmpty)
 
-        let third = GitHubAccount(name: "octocat", email: "583231+octocat@users.noreply.github.com")
-        AccountStore.add(third, defaults: defaults)
-        XCTAssertEqual(AccountStore.load(defaults: defaults).count, 3)
-        XCTAssertTrue(AccountStore.load(defaults: defaults).contains(third))
+        AccountStore.add(primaryAccount, defaults: defaults)
+        AccountStore.add(secondaryAccount, defaults: defaults)
+        XCTAssertEqual(AccountStore.load(defaults: defaults).count, 2)
+        XCTAssertTrue(AccountStore.load(defaults: defaults).contains(primaryAccount))
 
-        AccountStore.remove(ykSteven, defaults: defaults)
-        XCTAssertFalse(AccountStore.load(defaults: defaults).contains { $0.name == ykSteven.name })
+        AccountStore.remove(secondaryAccount, defaults: defaults)
+        XCTAssertEqual(AccountStore.load(defaults: defaults), [primaryAccount])
+
+        AccountStore.remove(primaryAccount, defaults: defaults)
+        XCTAssertTrue(AccountStore.load(defaults: defaults).isEmpty)
     }
 
     func testToolchainResolvesPaths() {
@@ -73,33 +82,15 @@ final class AccountSwitchingEngineTests: XCTestCase {
         XCTAssertTrue(FileManager.default.isExecutableFile(atPath: Toolchain.gitPath))
     }
 
-    func testSeededAccountReconciler() {
-        // 播种账号中至少一个已在 gh 授权（老用户机器）→ 保持不变
-        XCTAssertNil(SeededAccountReconciler.reconciledList(
-            stored: AccountStore.seeds,
-            ghAuthStatusText: "✓ Logged in to github.com account Aenvo"
-        ))
-        // 播种账号均未授权（新用户机器）→ 清空引导新增
-        XCTAssertEqual(
-            SeededAccountReconciler.reconciledList(stored: AccountStore.seeds, ghAuthStatusText: "You are not logged into any GitHub account."),
-            []
-        )
-        // 用户已自行管理过列表 → 不做调整
-        XCTAssertNil(SeededAccountReconciler.reconciledList(
-            stored: [GitHubAccount(name: "octocat", email: "583231+octocat@users.noreply.github.com")],
-            ghAuthStatusText: ""
-        ))
-    }
-
     func testActiveLoginParsesAuthStatusText() {
         let multiAccount = """
         github.com
-          ✓ Logged in to github.com account Aenvo (keyring)
+          ✓ Logged in to github.com account octocat (keyring)
           - Active account: true
           ✓ Logged in to github.com account hubot (keyring)
           - Active account: false
         """
-        XCTAssertEqual(AccountSwitchingEngine.activeLogin(fromAuthStatusText: multiAccount), "Aenvo")
+        XCTAssertEqual(AccountSwitchingEngine.activeLogin(fromAuthStatusText: multiAccount), "octocat")
 
         let singleLegacy = "✓ Logged in to github.com account monalisa (keyring)"
         XCTAssertEqual(AccountSwitchingEngine.activeLogin(fromAuthStatusText: singleLegacy), "monalisa")
@@ -108,22 +99,22 @@ final class AccountSwitchingEngineTests: XCTestCase {
     }
 
     func testReadStatusUsesLocalAuthStatusWithoutNetwork() async {
-        let runner = MockCommandRunner(active: aenvo)
+        let runner = MockCommandRunner(active: primaryAccount)
         runner.failApiUser = true
-        let engine = makeEngine(runner, defaults: makeDefaults())
+        let engine = makeEngine(runner, defaults: makeConfiguredDefaults())
 
         let status = await engine.readStatus()
 
         XCTAssertEqual(status.state, .ready)
-        XCTAssertEqual(status.activeAccount?.name, "Aenvo")
-        XCTAssertEqual(status.gitName, "Aenvo")
+        XCTAssertEqual(status.activeAccount?.name, "octocat")
+        XCTAssertEqual(status.gitName, "octocat")
         // 账号读取必须走死代理环境，确保不被网络校验拖住
         XCTAssertEqual(runner.lastAuthStatusEnvironment?["HTTPS_PROXY"], AccountSwitchingEngine.localOnlyProxyEnvironment["HTTPS_PROXY"])
     }
 
     func testRefreshInBackgroundMarksOfflineCachedWhenGitHubUnreachable() async {
-        let runner = MockCommandRunner(active: aenvo)
-        let defaults = makeDefaults()
+        let runner = MockCommandRunner(active: primaryAccount)
+        let defaults = makeConfiguredDefaults()
         let coordinator = SwitchCoordinator(engine: makeEngine(runner, defaults: defaults), defaults: defaults)
         _ = await coordinator.currentStatus(refresh: true)
         runner.failApiUser = true
@@ -133,13 +124,13 @@ final class AccountSwitchingEngineTests: XCTestCase {
 
         XCTAssertTrue(changed)
         XCTAssertEqual(status.state, .offlineCached)
-        XCTAssertEqual(status.activeAccount?.name, "Aenvo")
+        XCTAssertEqual(status.activeAccount?.name, "octocat")
         XCTAssertEqual(status.message, "GitHub 暂时不可达，显示本地状态")
     }
 
     func testRefreshInBackgroundKeepsReadyWhenReachableAndThrottles() async {
-        let runner = MockCommandRunner(active: aenvo)
-        let defaults = makeDefaults()
+        let runner = MockCommandRunner(active: primaryAccount)
+        let defaults = makeConfiguredDefaults()
         let coordinator = SwitchCoordinator(engine: makeEngine(runner, defaults: defaults), defaults: defaults)
         _ = await coordinator.currentStatus(refresh: true)
 
@@ -161,16 +152,16 @@ final class AccountSwitchingEngineTests: XCTestCase {
         // 断网时 gh auth status 秒回，文案为 "Failed to log in"，本地仍标记激活账号
         let offlineText = """
         github.com
-          X Failed to log in to github.com account Aenvo (keyring)
+          X Failed to log in to github.com account octocat (keyring)
           - Active account: true
           - The token in keyring is invalid.
         """
-        XCTAssertEqual(AccountSwitchingEngine.activeLogin(fromAuthStatusText: offlineText), "Aenvo")
+        XCTAssertEqual(AccountSwitchingEngine.activeLogin(fromAuthStatusText: offlineText), "octocat")
     }
 
     func testCurrentStatusKeepsCacheWhenAuthStatusTimesOut() async {
-        let runner = MockCommandRunner(active: aenvo)
-        let defaults = makeDefaults()
+        let runner = MockCommandRunner(active: primaryAccount)
+        let defaults = makeConfiguredDefaults()
         let coordinator = SwitchCoordinator(engine: makeEngine(runner, defaults: defaults), defaults: defaults)
         _ = await coordinator.currentStatus(refresh: true)
         runner.failAuthStatus = true
@@ -178,12 +169,12 @@ final class AccountSwitchingEngineTests: XCTestCase {
         let status = await coordinator.currentStatus(refresh: true)
 
         XCTAssertEqual(status.state, .offlineCached)
-        XCTAssertEqual(status.activeAccount?.name, "Aenvo")
+        XCTAssertEqual(status.activeAccount?.name, "octocat")
     }
 
     func testCurrentStatusDoesNotMaskGenuinelyNoAccounts() async {
-        let runner = MockCommandRunner(active: aenvo, authorized: [])
-        let defaults = makeDefaults()
+        let runner = MockCommandRunner(active: primaryAccount, authorized: [])
+        let defaults = makeConfiguredDefaults()
         let coordinator = SwitchCoordinator(engine: makeEngine(runner, defaults: defaults), defaults: defaults)
         _ = await coordinator.currentStatus(refresh: true)
 
@@ -194,73 +185,74 @@ final class AccountSwitchingEngineTests: XCTestCase {
     }
 
     func testSuccessfulSwitchVerifiesAccountAndIdentity() async {
-        let runner = MockCommandRunner(active: aenvo)
-        let engine = makeEngine(runner, defaults: makeDefaults())
+        let runner = MockCommandRunner(active: primaryAccount)
+        let engine = makeEngine(runner, defaults: makeConfiguredDefaults())
 
-        let status = await engine.switchAccount(to: ykSteven)
+        let status = await engine.switchAccount(to: secondaryAccount)
 
         XCTAssertEqual(status.state, .ready)
         XCTAssertEqual(status.activeAccount?.name, "hubot")
         XCTAssertEqual(status.gitName, "hubot")
-        XCTAssertEqual(status.gitEmail, ykSteven.gitEmail)
+        XCTAssertEqual(status.gitEmail, secondaryAccount.gitEmail)
     }
 
     func testFailureRollsBackAccountAndIdentity() async {
-        let runner = MockCommandRunner(active: aenvo)
+        let runner = MockCommandRunner(active: primaryAccount)
         runner.failEmailWrite = true
-        let engine = makeEngine(runner, defaults: makeDefaults())
+        let engine = makeEngine(runner, defaults: makeConfiguredDefaults())
 
-        let status = await engine.switchAccount(to: ykSteven)
+        let status = await engine.switchAccount(to: secondaryAccount)
 
         XCTAssertEqual(status.state, .error)
-        XCTAssertEqual(status.activeAccount?.name, "Aenvo")
-        XCTAssertEqual(status.gitName, "Aenvo")
-        XCTAssertEqual(status.gitEmail, aenvo.gitEmail)
+        XCTAssertEqual(status.activeAccount?.name, "octocat")
+        XCTAssertEqual(status.gitName, "octocat")
+        XCTAssertEqual(status.gitEmail, primaryAccount.gitEmail)
     }
 
     func testConcurrentSwitchIsCoalesced() async {
-        let runner = MockCommandRunner(active: aenvo)
+        let runner = MockCommandRunner(active: primaryAccount)
         runner.commandDelayNanoseconds = 20_000_000
-        let coordinator = SwitchCoordinator(engine: makeEngine(runner, defaults: makeDefaults()), defaults: makeDefaults())
+        let defaults = makeConfiguredDefaults()
+        let coordinator = SwitchCoordinator(engine: makeEngine(runner, defaults: defaults), defaults: defaults)
 
-        async let first = coordinator.switchAccount(to: ykSteven)
-        async let second = coordinator.switchAccount(to: ykSteven)
+        async let first = coordinator.switchAccount(to: secondaryAccount)
+        async let second = coordinator.switchAccount(to: secondaryAccount)
         _ = await (first, second)
 
         XCTAssertEqual(runner.switchCommandCount, 1)
     }
 
     func testToggleChoosesFirstAlternate() async {
-        let runner = MockCommandRunner(active: aenvo)
-        let defaults = makeDefaults()
+        let runner = MockCommandRunner(active: primaryAccount)
+        let defaults = makeConfiguredDefaults()
         let coordinator = SwitchCoordinator(engine: makeEngine(runner, defaults: defaults), defaults: defaults)
 
         let status = await coordinator.toggleAccount()
 
         XCTAssertEqual(status.state, .ready)
         XCTAssertEqual(status.activeAccount?.name, "hubot")
-        XCTAssertEqual(status.gitName, ykSteven.gitUserName)
-        XCTAssertEqual(status.gitEmail, ykSteven.gitEmail)
+        XCTAssertEqual(status.gitName, secondaryAccount.gitUserName)
+        XCTAssertEqual(status.gitEmail, secondaryAccount.gitEmail)
     }
 
     func testToggleWithoutAlternateReportsError() async {
-        let runner = MockCommandRunner(active: aenvo)
+        let runner = MockCommandRunner(active: primaryAccount)
         let defaults = makeDefaults()
-        AccountStore.save([aenvo], defaults: defaults)
+        AccountStore.save([primaryAccount], defaults: defaults)
         let coordinator = SwitchCoordinator(engine: makeEngine(runner, defaults: defaults), defaults: defaults)
 
         let status = await coordinator.toggleAccount()
 
         XCTAssertEqual(status.state, .error)
-        XCTAssertEqual(status.activeAccount?.name, "Aenvo")
+        XCTAssertEqual(status.activeAccount?.name, "octocat")
         XCTAssertEqual(status.message, "没有其他可切换的账号")
     }
 
     func testLogoutRunsGhAuthLogoutWithUserFlag() async {
-        let runner = MockCommandRunner(active: aenvo)
-        let engine = makeEngine(runner, defaults: makeDefaults())
+        let runner = MockCommandRunner(active: primaryAccount)
+        let engine = makeEngine(runner, defaults: makeConfiguredDefaults())
 
-        let result = await engine.logout(ykSteven)
+        let result = await engine.logout(secondaryAccount)
 
         XCTAssertTrue(result.succeeded)
         XCTAssertEqual(runner.logoutCommandCount, 1)
@@ -268,78 +260,78 @@ final class AccountSwitchingEngineTests: XCTestCase {
     }
 
     func testRemoveNonActiveAccountSkipsSwitch() async {
-        let runner = MockCommandRunner(active: aenvo)
-        let defaults = makeDefaults()
+        let runner = MockCommandRunner(active: primaryAccount)
+        let defaults = makeConfiguredDefaults()
         let coordinator = SwitchCoordinator(engine: makeEngine(runner, defaults: defaults), defaults: defaults)
 
-        let status = await coordinator.removeAccount(ykSteven)
+        let status = await coordinator.removeAccount(secondaryAccount)
         let accounts = await coordinator.accounts
 
         XCTAssertEqual(runner.switchCommandCount, 0)
         XCTAssertEqual(runner.logoutCommandCount, 1)
-        XCTAssertEqual(status.activeAccount?.name, "Aenvo")
-        XCTAssertFalse(accounts.contains { $0.name == ykSteven.name })
+        XCTAssertEqual(status.activeAccount?.name, "octocat")
+        XCTAssertFalse(accounts.contains { $0.name == secondaryAccount.name })
     }
 
     func testRemoveActiveAccountSwitchesFirstThenLogsOut() async {
-        let runner = MockCommandRunner(active: aenvo)
-        let defaults = makeDefaults()
+        let runner = MockCommandRunner(active: primaryAccount)
+        let defaults = makeConfiguredDefaults()
         let coordinator = SwitchCoordinator(engine: makeEngine(runner, defaults: defaults), defaults: defaults)
 
-        let status = await coordinator.removeAccount(aenvo)
+        let status = await coordinator.removeAccount(primaryAccount)
         let accounts = await coordinator.accounts
 
         XCTAssertEqual(runner.switchCommandCount, 1)
         XCTAssertEqual(runner.switchTargets, ["hubot"])
         XCTAssertEqual(runner.logoutCommandCount, 1)
-        XCTAssertEqual(runner.lastLogoutUser, "Aenvo")
+        XCTAssertEqual(runner.lastLogoutUser, "octocat")
         XCTAssertEqual(status.activeAccount?.name, "hubot")
-        XCTAssertFalse(accounts.contains { $0.name == aenvo.name })
+        XCTAssertFalse(accounts.contains { $0.name == primaryAccount.name })
     }
 
     func testAdoptNewAccountSwitchesIdentityAndStores() async {
-        let octocat = GitHubAccount(name: "octocat", email: "583231+octocat@users.noreply.github.com")
-        let runner = MockCommandRunner(active: aenvo)
-        runner.authorized.append(octocat)
-        let defaults = makeDefaults()
+        let monalisa = GitHubAccount(name: "monalisa", email: "654321+monalisa@users.noreply.github.com")
+        let runner = MockCommandRunner(active: primaryAccount)
+        runner.authorized.append(monalisa)
+        let defaults = makeConfiguredDefaults()
         let coordinator = SwitchCoordinator(engine: makeEngine(runner, defaults: defaults), defaults: defaults)
 
-        let status = await coordinator.adoptNewAccount(octocat)
+        let status = await coordinator.adoptNewAccount(monalisa)
         let accounts = await coordinator.accounts
 
         XCTAssertEqual(status.state, .ready)
-        XCTAssertEqual(status.activeAccount?.name, "octocat")
-        XCTAssertEqual(status.gitEmail, octocat.email)
-        XCTAssertTrue(accounts.contains { $0.name == "octocat" })
+        XCTAssertEqual(status.activeAccount?.name, "monalisa")
+        XCTAssertEqual(status.gitEmail, monalisa.email)
+        XCTAssertTrue(accounts.contains { $0.name == "monalisa" })
     }
 
     func testUpdateActiveAccountAppliesGitIdentityImmediately() async {
-        let runner = MockCommandRunner(active: aenvo)
-        let defaults = makeDefaults()
+        let runner = MockCommandRunner(active: primaryAccount)
+        let defaults = makeConfiguredDefaults()
         let coordinator = SwitchCoordinator(engine: makeEngine(runner, defaults: defaults), defaults: defaults)
-        let customized = GitHubAccount(name: "Aenvo", email: "dev@example.com", gitName: "Aenvo Dev", defaultEmail: aenvo.email)
+        let customized = GitHubAccount(name: "octocat", email: "dev@example.com", gitName: "Octocat Dev", defaultEmail: primaryAccount.email)
 
         let status = await coordinator.updateAccount(customized)
         let accounts = await coordinator.accounts
 
         XCTAssertEqual(status.state, .ready)
-        XCTAssertEqual(status.gitName, "Aenvo Dev")
+        XCTAssertEqual(status.gitName, "Octocat Dev")
         XCTAssertEqual(status.gitEmail, "dev@example.com")
-        XCTAssertEqual(accounts.first { $0.name == "Aenvo" }, customized)
+        XCTAssertEqual(accounts.first { $0.name == "octocat" }, customized)
     }
 
     func testUpdateInactiveAccountOnlyStores() async {
-        let runner = MockCommandRunner(active: aenvo)
-        let defaults = makeDefaults()
+        let runner = MockCommandRunner(active: primaryAccount)
+        let defaults = makeConfiguredDefaults()
         let coordinator = SwitchCoordinator(engine: makeEngine(runner, defaults: defaults), defaults: defaults)
-        let customized = GitHubAccount(name: "hubot", email: "steven@example.com", gitName: "Steven")
+        let customized = GitHubAccount(name: "hubot", email: "hubot@example.com", gitName: "Hubot")
 
         let status = await coordinator.updateAccount(customized)
         let accounts = await coordinator.accounts
 
         // 非当前账号：仅更新列表，不改动全局 git 配置
-        XCTAssertEqual(status.gitName, "Aenvo")
-        XCTAssertEqual(status.gitEmail, aenvo.gitEmail)
+        XCTAssertEqual(status.gitName, "octocat")
+        XCTAssertEqual(status.gitEmail, primaryAccount.gitEmail)
         XCTAssertEqual(accounts.first { $0.name == "hubot" }, customized)
     }
 
@@ -347,10 +339,19 @@ final class AccountSwitchingEngineTests: XCTestCase {
         guard ProcessInfo.processInfo.environment["RUN_LIVE_SWITCH_TESTS"] == "1" else {
             throw XCTSkip("Set RUN_LIVE_SWITCH_TESTS=1 to exercise the real gh and git configuration.")
         }
-        let engine = AccountSwitchingEngine()
+        let environment = ProcessInfo.processInfo.environment
+        let account1Login = try XCTUnwrap(environment["GITSWITCH_LIVE_ACCOUNT_1_LOGIN"])
+        let account1Email = try XCTUnwrap(environment["GITSWITCH_LIVE_ACCOUNT_1_EMAIL"])
+        let account2Login = try XCTUnwrap(environment["GITSWITCH_LIVE_ACCOUNT_2_LOGIN"])
+        let account2Email = try XCTUnwrap(environment["GITSWITCH_LIVE_ACCOUNT_2_EMAIL"])
+        let accounts = [
+            GitHubAccount(name: account1Login, email: account1Email),
+            GitHubAccount(name: account2Login, email: account2Email)
+        ]
+        let engine = AccountSwitchingEngine(accountsProvider: { accounts })
         let original = await engine.readStatus()
-        let originalAccount = try XCTUnwrap(original.activeAccount)
-        let alternate = try XCTUnwrap(AccountStore.load().first { $0.name != originalAccount.name })
+        let originalAccount = try XCTUnwrap(accounts.first { $0.name == original.activeAccount?.name })
+        let alternate = try XCTUnwrap(accounts.first { $0.name != originalAccount.name })
 
         let switched = await engine.switchAccount(to: alternate)
         XCTAssertEqual(switched.state, .ready)
@@ -383,7 +384,7 @@ final class MockCommandRunner: CommandRunning, @unchecked Sendable {
     private(set) var lastAuthStatusEnvironment: [String: String]?
 
     init(active: GitHubAccount, authorized: [GitHubAccount]? = nil) {
-        self.authorized = authorized ?? AccountStore.seeds
+        self.authorized = authorized ?? [TestFixtures.primary, TestFixtures.secondary]
         self.activeName = active.name
         self.gitUserName = active.gitUserName
         self.gitUserEmail = active.email

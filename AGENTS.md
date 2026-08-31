@@ -6,7 +6,7 @@
 
 1. 先阅读 `README.md`、`project.yml` 以及本次任务涉及的 Swift 文件。
 2. 使用只读命令核对当前运行状态、已安装应用和 GitHub/Git 身份；不要假设旧交接信息始终有效。
-3. 检查当前目录是否已经初始化为 Git 仓库，并保护任何已有用户改动。当前交接时该目录尚无 `.git`。
+3. 检查当前目录是否为预期 Git 仓库，并保护任何已有用户改动。
 4. `project.yml` 是 Xcode 工程配置的主要源。`GitSwitch.xcodeproj` 由 XcodeGen 生成，不要只修改生成后的工程文件而遗漏 `project.yml`。App/Widget 的 `CFBundleShortVersionString`/`CFBundleVersion` 以 `$(MARKETING_VERSION)`/`$(CURRENT_PROJECT_VERSION)` 变量形式定义在 `project.yml` 的 info properties 中：改版本只改 settings 里的这两个值，不要手改 Info.plist（会被 xcodegen 每次生成时重写）。
 
 ## 架构边界
@@ -21,7 +21,7 @@
 - 外部命令执行支持超时与环境变量覆盖（`CommandRunning.run(timeout:environment:)`），防止 gh 卡死拖住串行队列。
 - 保持 `SwitchCoordinator` 的串行化语义，不能让两个切换事务并发执行。
 - 切换必须保存原状态、执行 `gh auth switch` 与 `gh auth setup-git`、同步全局 Git 身份、完整验证，并在失败时回滚到实际原状态。
-- 账号列表是动态配置：`AccountStore`（UserDefaults 键 `GitSwitchAccounts`）持久化用户管理的账号，首次使用播种 `Aenvo` 与 `hubot` 两个默认账号；播种只在键不存在时发生，删除账号后不得自动恢复。首次启动时若列表仍是播种且没有任何账号在 gh 中授权（`SeededAccountReconciler`），自动清空列表引导用户新增自己的账号。
+- 账号列表是动态配置：`AccountStore`（UserDefaults 键 `GitSwitchAccounts`）持久化用户管理的账号；新安装从空列表开始，已有存储继续按原格式读取。删除账号后不得自动恢复或重新添加示例账号。
 - 新增账号走 GitHub 设备码授权：`AuthFlowController` 以无终端方式运行 `gh auth login --web`，解析 stderr 中的一次性码与授权 URL 展示给用户；授权成功后以 `gh api user` 的实际登录名为准（与表单输入不一致时按授权结果保存），并自动派生 noreply 邮箱。授权完成后经 `SwitchCoordinator.adoptNewAccount` 同步 Git 身份并写入账号列表。
 - 删除账号必须先在 UI 二次确认，再经 `SwitchCoordinator.removeAccount` 执行；删除当前账号时会先切换到列表中的其他账号，切换失败则中止删除。
 
@@ -33,7 +33,6 @@
 - 不读取、输出、保存、提交或写入文档任何 GitHub token、OAuth 凭据或钥匙串秘密。
 - 不在日志或测试快照中保留完整 `gh auth status` 认证信息。
 - 未经用户明确要求，不更改：
-  - `AccountStore` 的默认播种账号（`Aenvo`、`hubot`）及其 noreply 邮箱；
   - Bundle Identifier；
   - `gitswitch` URL Scheme；
   - `47831` 端口；
@@ -74,7 +73,7 @@
 
 测试至少覆盖：
 
-- 账号模型与 noreply 邮箱生成、`AccountStore` 播种/新增/删除持久化（删除后不复活）；
+- 账号模型与 noreply 邮箱生成、`AccountStore` 空列表初始化/新增/删除持久化（删除后不复活）；
 - 成功切换及最终验证；
 - 各步骤失败后的完整回滚；
 - 并发请求只执行一个切换事务；
@@ -84,7 +83,7 @@
 - 状态接口的正常、切换中、错误、离线及非法请求；
 - 状态服务仅绑定回环地址；
 - UI 选择、取消、确定、切换中和失败反馈；
-- `Aenvo ↔ hubot` 双向实机切换及恢复。
+- 通过 `GITSWITCH_LIVE_ACCOUNT_1_*` / `GITSWITCH_LIVE_ACCOUNT_2_*` 环境变量提供的两个已授权账号完成双向实机切换及恢复；真实账号与邮箱不得写入源码。
 
 ## 构建、安装与验收
 
@@ -110,10 +109,10 @@
 
 - `.gitignore` 已就绪（2026-08-22）：忽略 `build/`、DerivedData、`*.xcodeproj`（XcodeGen 生成物，克隆后运行 `xcodegen generate` 重建）、Xcode 用户态数据、`.app`/压缩包与证书文件；不要提交本机构建产物。
 - 许可证为 MIT（`LICENSE`，© 2026 Aenvo）；更换许可证需用户确认。
-- Git 仓库已建立：私有仓库 `Aenvo/GitSwitch`（https://github.com/Aenvo/GitSwitch，2026-08-22 创建并推送）。agent 发起的提交、推送、更改仓库设置仍需用户明确授权。
-- CI（`.github/workflows/ci.yml`）：push 到 main 或 PR 时在 macOS runner 上运行单元测试，注意私有仓库 macOS runner 按 10 倍计费，保持触发克制。
+- Git 仓库为 `Aenvo/GitSwitch`（https://github.com/Aenvo/GitSwitch）。agent 发起的提交、推送、更改仓库设置或可见性仍需用户明确授权。
+- CI（`.github/workflows/ci.yml`）：push 到 main 或 PR 时在 macOS runner 上运行单元测试；不要无必要扩大触发范围。
 - Release（`.github/workflows/release.yml`）：推送 `v*` 标签或手动 workflow_dispatch 触发；版本号取自 `project.yml` 的 `MARKETING_VERSION`，产物为 ad-hoc 签名的 `GitSwitch-<版本>.app.zip` 与 `.sha256`。本机安装仍以 `scripts/build_and_install.sh` 为准。
-- 敏感信息审计已完成（2026-08-22）：未发现 token、私钥、密码或绝对路径；个人 noreply 邮箱仅存在于 `Shared/AccountStore.swift` 的默认播种和 `Tests/AccountSwitchingEngineTests.swift` 的测试夹具（私有仓库可接受）。Widget 占位符已改为中性示例。若未来公开仓库：需把播种改为空列表加首次引导、测试夹具改用虚构数据，并复查交付文档。
+- 公开准备要求：当前源码和测试不得包含维护者的真实账号、提交邮箱、token、私钥、密码或个人绝对路径；测试夹具使用虚构账号。公开前还要单独复查 Git 历史、Actions 日志、Release 产物和仓库元数据，不能用当前工作树扫描代替历史审计。
 - 交付新应用包时，从已验证的 `/Applications` 安装版本生成压缩包，并同步更新源码包和交接说明。
 
 ## 重命名记录（2026-08-22 已完成）

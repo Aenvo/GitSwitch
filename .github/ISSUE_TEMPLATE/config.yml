@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 安全问题 / Security issue
+    url: https://github.com/Aenvo/GitSwitch/security/policy
+    about: 请先阅读安全政策并使用私密报告入口 / Read the security policy and use private reporting

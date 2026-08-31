@@ -1,0 +1,28 @@
+name: 功能建议 / Feature request
+description: 建议可验证的改进 / Propose a testable improvement
+title: "[Feature] "
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: 要解决的问题 / Problem to solve
+      description: 描述使用场景，而不只是实现方式 / Describe the use case, not only an implementation
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: 建议方案 / Proposed behavior
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: 替代方案 / Alternatives considered
+  - type: checkboxes
+    id: scope
+    attributes:
+      label: 范围确认 / Scope check
+      options:
+        - label: 我已考虑它是否会修改全局 Git 身份、GitHub CLI 凭据或主应用与 Widget 的安全边界 / I considered effects on global Git identity, GitHub CLI credentials, and the app/widget security boundary
+          required: true
