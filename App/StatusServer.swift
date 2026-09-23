@@ -61,7 +61,8 @@ final class StatusServer: @unchecked Sendable {
     }
 
     private func processRequest(_ request: String, connection: NWConnection) {
-        if request.hasPrefix("GET /v1/status ") {
+        switch StatusRequestRoute(request: request) {
+        case .status:
             Task {
                 // 缓存优先：立即返回（本地读取毫秒级，弱网下不再拖垮小组件），
                 // 随后后台验证 GitHub 可达性，可见状态变化时刷新小组件时间线。
@@ -71,25 +72,8 @@ final class StatusServer: @unchecked Sendable {
                     WidgetCenter.shared.reloadAllTimelines()
                 }
             }
-            return
-        }
-
-        let headerLines = request.components(separatedBy: "\r\n")
-        let authorizedClient = headerLines.dropFirst().contains { line in
-            line.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-                == "x-gitswitch-client: widget-v1"
-        }
-        let requestLine = headerLines.first ?? ""
-        guard authorizedClient,
-              requestLine == "POST /v1/toggle HTTP/1.1" else {
+        case .notFound:
             send(connection, statusCode: 404, body: Data("{}".utf8))
-            return
-        }
-
-        Task {
-            let status = await SwitchCoordinator.shared.toggleAccount()
-            WidgetCenter.shared.reloadAllTimelines()
-            self.sendStatus(connection, status: status)
         }
     }
 

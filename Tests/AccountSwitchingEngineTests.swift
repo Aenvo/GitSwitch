@@ -222,30 +222,21 @@ final class AccountSwitchingEngineTests: XCTestCase {
         XCTAssertEqual(runner.switchCommandCount, 1)
     }
 
-    func testToggleChoosesFirstAlternate() async {
-        let runner = MockCommandRunner(active: primaryAccount)
-        let defaults = makeConfiguredDefaults()
-        let coordinator = SwitchCoordinator(engine: makeEngine(runner, defaults: defaults), defaults: defaults)
-
-        let status = await coordinator.toggleAccount()
-
-        XCTAssertEqual(status.state, .ready)
-        XCTAssertEqual(status.activeAccount?.name, "hubot")
-        XCTAssertEqual(status.gitName, secondaryAccount.gitUserName)
-        XCTAssertEqual(status.gitEmail, secondaryAccount.gitEmail)
-    }
-
-    func testToggleWithoutAlternateReportsError() async {
-        let runner = MockCommandRunner(active: primaryAccount)
-        let defaults = makeDefaults()
-        AccountStore.save([primaryAccount], defaults: defaults)
-        let coordinator = SwitchCoordinator(engine: makeEngine(runner, defaults: defaults), defaults: defaults)
-
-        let status = await coordinator.toggleAccount()
-
-        XCTAssertEqual(status.state, .error)
-        XCTAssertEqual(status.activeAccount?.name, "octocat")
-        XCTAssertEqual(status.message, "没有其他可切换的账号")
+    func testStatusRequestRouteAllowsOnlyReadOnlyStatusEndpoint() {
+        XCTAssertEqual(
+            StatusRequestRoute(request: "GET /v1/status HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n"),
+            .status
+        )
+        XCTAssertEqual(
+            StatusRequestRoute(
+                request: "POST /v1/toggle HTTP/1.1\r\nX-GitSwitch-Client: widget-v1\r\n\r\n"
+            ),
+            .notFound
+        )
+        XCTAssertEqual(
+            StatusRequestRoute(request: "GET /v1/status?refresh=1 HTTP/1.1\r\n\r\n"),
+            .notFound
+        )
     }
 
     func testLogoutRunsGhAuthLogoutWithUserFlag() async {

@@ -27,7 +27,7 @@ GitSwitch selects the first executable `gh` found at `/opt/homebrew/bin`, `/usr/
 3. Extract the archive and move `GitSwitch.app` to `/Applications`.
 4. If macOS cannot verify the developer on first launch, right-click GitSwitch in Applications, choose **Open**, and confirm again.
 
-Release builds use ad-hoc signing and are not notarized by Apple. Only use packages from this repository's Releases page after their SHA-256 check succeeds.
+Release builds use ad-hoc signing without debugger-attachment entitlement and are not notarized by Apple. Only use packages from this repository's Releases page after their SHA-256 check succeeds.
 
 ### First-time setup
 
@@ -53,8 +53,8 @@ New installations start without sample accounts. When upgrading, an account list
 
 - GitHub credentials are managed by GitHub CLI and the macOS Keychain. GitSwitch does not read, log, or persist GitHub tokens.
 - The main app is not sandboxed so it can invoke `gh` and update the global Git configuration. Keychain credentials remain accessed and managed by `gh`.
-- The Widget Extension stays sandboxed. It only reads `http://127.0.0.1:47831/v1/status` and opens the main app through `gitswitch://choose`.
-- The local status service binds only to `127.0.0.1:47831`, and its response does not contain tokens.
+- The Widget Extension stays sandboxed. It only reads status through `GET http://127.0.0.1:47831/v1/status` and opens the main app through `gitswitch://choose`.
+- The local status service binds only to `127.0.0.1:47831`, exposes no account-switching write endpoint, and never returns tokens.
 - Removing an account runs `gh auth logout --hostname github.com --user <account>`, which signs that account out of GitHub CLI on the local Mac.
 
 GitSwitch is not a per-repository identity switcher: every switch affects the current macOS user's global Git configuration. Confirm the target account and commit email before switching or removing an account.

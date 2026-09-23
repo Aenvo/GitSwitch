@@ -10,15 +10,6 @@ struct SwitcherLoopbackClient {
         return await perform(request)
     }
 
-    func toggleAccount() async -> SwitcherStatus {
-        guard let url = URL(string: "\(baseURL)/v1/toggle") else { return .offline }
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.timeoutInterval = 30
-        request.setValue("widget-v1", forHTTPHeaderField: "X-GitSwitch-Client")
-        return await perform(request)
-    }
-
     private func perform(_ request: URLRequest) async -> SwitcherStatus {
         do {
             let configuration = URLSessionConfiguration.ephemeral

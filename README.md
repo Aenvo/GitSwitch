@@ -27,7 +27,7 @@ GitSwitch 会从 `/opt/homebrew/bin`、`/usr/local/bin`、`/usr/bin` 和 `/opt/l
 3. 解压后把 `GitSwitch.app` 拖入 `/Applications`。
 4. 首次启动时如果 macOS 提示无法验证开发者，在「应用程序」中右键 GitSwitch，选择「打开」并再次确认。
 
-Release 中的应用使用 ad-hoc 签名，没有经过 Apple 公证。请只使用本仓库 Release 页面提供且 SHA-256 校验通过的文件。
+Release 中的应用使用 ad-hoc 签名、移除调试附加权限，没有经过 Apple 公证。请只使用本仓库 Release 页面提供且 SHA-256 校验通过的文件。
 
 ### 首次设置
 
@@ -53,8 +53,8 @@ Release 中的应用使用 ad-hoc 签名，没有经过 Apple 公证。请只使
 
 - GitHub 凭据由 GitHub CLI 和 macOS 钥匙串管理；GitSwitch 不读取、记录或持久化 GitHub token。
 - 主应用为非沙盒应用，以便调用 `gh` 并修改全局 Git 配置；钥匙串凭据仍由 `gh` 访问和管理。
-- Widget Extension 保持沙盒化，只访问 `http://127.0.0.1:47831/v1/status` 并通过 `gitswitch://choose` 打开主应用。
-- 本地状态服务只绑定 `127.0.0.1:47831`，响应不包含 token。
+- Widget Extension 保持沙盒化，只通过只读的 `GET http://127.0.0.1:47831/v1/status` 获取状态，并通过 `gitswitch://choose` 打开主应用。
+- 本地状态服务只绑定 `127.0.0.1:47831`，不提供切换账号的写接口，响应不包含 token。
 - 删除账号会执行 `gh auth logout --hostname github.com --user <账号>`，从本机 GitHub CLI 中注销该账号。
 
 这意味着 GitSwitch 不是项目级身份切换器：一次切换会影响当前 macOS 用户的全局 Git 配置。切换或删除前，请确认目标账号和提交邮箱。

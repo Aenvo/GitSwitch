@@ -15,7 +15,7 @@
 - Widget 不直接运行 `gh`、不修改 Git 配置，也不负责执行真实账号切换。
 - 账号切换必须在主应用进程中通过 `SwitchCoordinator` 和 `AccountSwitchingEngine` 执行。
 - 主应用保持非沙盒，以访问 GitHub CLI、钥匙串凭据和全局 Git 配置；Widget 保持沙盒化，并仅保留本机网络客户端权限。
-- 状态服务必须只绑定 `127.0.0.1:47831`，不得监听局域网或公网地址，接口不得返回 token。
+- 状态服务必须只绑定 `127.0.0.1:47831`，只提供 `GET /v1/status` 状态读取，不得增加账号切换写接口、监听局域网或公网地址，也不得返回 token。
 - 状态读取与网络解耦（v1.2 起）：`GET /v1/status` 缓存优先、立即返回；账号来自 `gh auth status` 本地解析，调用时故意注入死代理环境（`AccountSwitchingEngine.localOnlyProxyEnvironment`）让 gh 的联网校验瞬间失败，账号读取不受网络影响（实测 8 秒超时 → 0.1 秒）；GitHub 可达性由 `remoteLogin` 在后台单独探测（30 秒节流），不可达时降级为 `offlineCached`（账号照常显示、灰点提示），绝不整卡不可用。删除或绕过死代理环境会使弱网下账号读取重新被网络拖住。
 - `SwitcherState` 包含 `ready`/`switching`/`error`/`offline`/`offlineCached`；`offline` 仅表示主应用未运行。auth status 输出为空（超时）时可用缓存兜底，但输出非空且无账号（全部注销）是真实状态，不得被缓存遮蔽。
 - 外部命令执行支持超时与环境变量覆盖（`CommandRunning.run(timeout:environment:)`），防止 gh 卡死拖住串行队列。
@@ -111,6 +111,7 @@
 - 许可证为 MIT（`LICENSE`，© 2026 Aenvo）；更换许可证需用户确认。
 - Git 仓库为 `Aenvo/GitSwitch`（https://github.com/Aenvo/GitSwitch）。agent 发起的提交、推送、更改仓库设置或可见性仍需用户明确授权。
 - CI（`.github/workflows/ci.yml`）：push 到 main 或 PR 时在 macOS runner 上运行单元测试；不要无必要扩大触发范围。
+- Security（`.github/workflows/security.yml`）：使用固定版本的 Gitleaks 扫描当前仓库和可达历史；本地可选用 `.pre-commit-config.yaml` 提前执行同类检查。
 - Release（`.github/workflows/release.yml`）：推送 `v*` 标签或手动 workflow_dispatch 触发；版本号取自 `project.yml` 的 `MARKETING_VERSION`，产物为 ad-hoc 签名的 `GitSwitch-<版本>.app.zip` 与 `.sha256`。本机安装仍以 `scripts/build_and_install.sh` 为准。
 - 公开准备要求：当前源码和测试不得包含维护者的真实账号、提交邮箱、token、私钥、密码或个人绝对路径；测试夹具使用虚构账号。公开前还要单独复查 Git 历史、Actions 日志、Release 产物和仓库元数据，不能用当前工作树扫描代替历史审计。
 - 交付新应用包时，从已验证的 `/Applications` 安装版本生成压缩包，并同步更新源码包和交接说明。

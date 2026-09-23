@@ -19,6 +19,7 @@ xcodebuild \
   -derivedDataPath "$derived_dir" \
   CODE_SIGN_STYLE=Manual \
   CODE_SIGN_IDENTITY=- \
+  CODE_SIGN_INJECT_BASE_ENTITLEMENTS=NO \
   DEVELOPMENT_TEAM= \
   build
 

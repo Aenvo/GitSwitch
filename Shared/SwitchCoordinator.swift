@@ -148,29 +148,4 @@ actor SwitchCoordinator {
         return status
     }
 
-    func toggleAccount() async -> SwitcherStatus {
-        let current = await currentStatus(refresh: true)
-        guard let activeAccount = current.activeAccount else {
-            status = SwitcherStatus(
-                state: .error,
-                activeAccount: nil,
-                gitName: current.gitName,
-                gitEmail: current.gitEmail,
-                message: "无法读取当前 GitHub 账号",
-                updatedAt: Date()
-            )
-            return status
-        }
-        guard let alternate = engine.firstAlternate(to: activeAccount) else {
-            return SwitcherStatus(
-                state: .error,
-                activeAccount: activeAccount,
-                gitName: current.gitName,
-                gitEmail: current.gitEmail,
-                message: "没有其他可切换的账号",
-                updatedAt: Date()
-            )
-        }
-        return await switchAccount(to: alternate)
-    }
 }
